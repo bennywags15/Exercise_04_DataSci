@@ -12,7 +12,7 @@ output:
 
 
 ```{r setup, include=FALSE}
-#knitr::opts_chunk$set(echo = TRUE, error=TRUE, message=FALSE, warning=FALSE)
+knitr::opts_chunk$set(echo = TRUE, error=TRUE, message=FALSE, warning=FALSE)
 ```
 
 ```{r libraries}
@@ -316,31 +316,55 @@ Stations<-read_csv("http://www.macalester.edu/~dshuman1/data/112/DC-Stations.csv
   9. Use the latitude and longitude variables in `Stations` to make a visualization of the total number of departures from each station in the `Trips` data. Use either color or size to show the variation in number of departures. This time, plot the points on top of a map. Use any of the mapping tools you'd like.
   
 ```{r}
-NYC_map <- get_stamenmap(
-    bbox = c(left = -74.6178, bottom = 40.3, right = -73.3406, top = 40.9851), 
-    maptype = "terrain",
-    zoom = 10)
-
-Trips %>%  
+dep_by_station <-Trips %>%  
   group_by(sstation) %>% 
   summarize(n=n()) %>% 
   left_join(Stations,
-            by = c("sstation"="name")) %>%
-  ggmap(NYC_map)+
-  geom_point(data = Trips, 
-             aes(x = long, y = lat), 
-             alpha = .3, 
-             size = n) +
+            by = c("sstation"="name"))
+
+Wash_map <- get_stamenmap(
+    bbox = c(left = -77.4178, bottom = 38.77, right = -76.3406, top = 39.15), 
+    maptype = "terrain",
+    zoom = 10)
+
+  ggmap(Wash_map)+
+  geom_point(data = dep_by_station, 
+             aes(x = long, y = lat, color= n), 
+             alpha = 1, 
+             size = 1.5) +
     
-  theme_map()
+  theme_map()+
+  labs(title = "Number of departures by station")
   
 ```
   
   10. Only 14.4% of the trips in our data are carried out by casual users. Create a plot that shows which area(s) have stations with a much higher percentage of departures by casual users. What patterns do you notice? Also plot this on top of a map. I think it will be more clear what the patterns are.
   
 ```{r}
+dep_by_station2 <-Trips %>%
+  group_by(sstation) %>% 
+  mutate(is_casual= client %in% "Casual") %>%  
+  mutate(more_casual= sum(is_casual=="TRUE")/sum(is_casual == "FALSE")) %>% 
+  filter(more_casual > 0.5) %>% 
+  left_join(Stations,
+            by = c("sstation"="name"))  
+Wash_map <- get_stamenmap(
+    bbox = c(left = -77.4178, bottom = 38.77, right = -76.3406, top = 39.15), 
+    maptype = "terrain",
+    zoom = 10)
 
+  ggmap(Wash_map)+
+  geom_point(data = dep_by_station2, 
+             aes(x = long, y = lat), 
+             alpha = 1, 
+             size = 1.5,
+             color = "red") +
+    
+  theme_map()+
+  labs(title = "Stations with high number of casual riders")
 ```
+
+As you can see from the map, stations that have more casual riders are located closer to the middle of Washington D.C. This is expected because of how much D.C. is a draw to tourist who are most likely casual bikers. It's interesting that there are a lot of casual riders near Darnestown.
   
 ### COVID-19 data
 
@@ -400,9 +424,12 @@ These exercises use the datasets `MplsStops` and `MplsDemo` from the `carData` l
 ```{r}
 mpls_suspicious<-MplsStops %>% 
   group_by(neighborhood) %>% 
-  summarize(num_stops = n()) %>% 
-  arrange(desc(num_stops)) %>% 
-  print()
+  count(problem) %>%
+  mutate(prop_suspicious= n/sum(n)) %>% 
+  filter(problem == "suspicious")
+
+mpls_suspicious %>% 
+  arrange(desc(n))
 ```
 
   15. Use a `leaflet` map and the `MplsStops` dataset to display each of the stops on a map as a small point. Color the points differently depending on whether they were for suspicious vehicle/person or a traffic stop (the `problem` variable). HINTS: use `addCircleMarkers`, set `stroke = FAlSE`, use `colorFactor()` to create a palette.  
@@ -424,15 +451,69 @@ leaflet(data = MplsStops) %>%
   
   16. Save the folder from moodle called Minneapolis_Neighborhoods into your project/repository folder for this assignment. Make sure the folder is called Minneapolis_Neighborhoods. Use the code below to read in the data and make sure to **delete the `eval=FALSE`**. Although it looks like it only links to the .sph file, you need the entire folder of files to create the `mpls_nbhd` data set. These data contain information about the geometries of the Minneapolis neighborhoods. Using the `mpls_nbhd` dataset as the base file, join the `mpls_suspicious` and `MplsDemo` datasets to it by neighborhood (careful, they are named different things in the different files). Call this new dataset `mpls_all`.
 
-```{r, eval=FALSE}
+```{r}
 mpls_nbhd <- st_read("Minneapolis_Neighborhoods/Minneapolis_Neighborhoods.shp", quiet = TRUE)
+mpls_all<-mpls_nbhd %>% 
+  left_join(mpls_suspicious,
+            by = c("BDNAME"="neighborhood")) %>% 
+  left_join(MplsDemo,
+            by = c("BDNAME"="neighborhood"))
 ```
 
   17. Use `leaflet` to create a map from the `mpls_all` data  that colors the neighborhoods by `prop_suspicious`. Display the neighborhood name as you scroll over it. Describe what you observe in the map.
   
+```{r}
+pal <- colorNumeric("viridis", 
+                     domain = mpls_all$prop_suspicious)
+leaflet(mpls_all) %>% 
+  addTiles() %>% 
+  addPolygons(
+    fillColor = ~pal(prop_suspicious), #fills according to that variable
+    fillOpacity = 0.7,
+    highlight = highlightOptions(weight = 5, 
+                                 color = "black",
+                                 fillOpacity = 0.9,
+                                 bringToFront = FALSE,
+                                 layer),
+    popup = ~paste(BDNAME)) %>% 
+  addLegend(pal = pal, 
+            values = ~prop_suspicious, 
+            opacity = 0.5, 
+            title = NULL,
+            position = "bottomright")
+```
+
+Southeast Minneapolis has a higher rate of suspicious stops than anywhere else in the city.
+  
   18. Use `leaflet` to create a map of your own choosing. Come up with a question you want to try to answer and use the map to help answer that question. Describe what your map shows. 
   
+Question: Do neighborhoods with a high household income have less/more police stops than neighborhoods with a lower household income?
   
+```{r}
+pal <- colorNumeric("viridis", 
+                     domain = mpls_all$hhIncome)
+leaflet(mpls_all) %>% 
+  addTiles() %>% 
+  addPolygons(
+    fillColor = ~pal(hhIncome), #fills according to that variable
+    fillOpacity = 0.7,
+    highlight = highlightOptions(weight = 5, 
+                                 color = "black",
+                                 fillOpacity = 0.9,
+                                 bringToFront = FALSE,
+                                 layer),
+    popup = ~paste(BDNAME,": ",
+                            round(n, 2),
+                            sep="")) %>% 
+  addLegend(pal = pal, 
+            values = ~hhIncome, 
+            opacity = 0.5, 
+            title = NULL,
+            position = "bottomright")
+```
+
+I can see from the graph that there are neighborhoods with lower household income that have a similar number of stops as those with higher household incomes. However, none of the neighborhoods with around 80-100k hhIncome have over 150 stops.
+
 ## GitHub link
 
   19. Below, provide a link to your GitHub page with this set of Weekly Exercises. Specifically, if the name of the file is 04_exercises.Rmd, provide a link to the 04_exercises.md file, which is the one that will be most readable on GitHub.
